@@ -9,7 +9,7 @@ class ShortenedUrl < ApplicationRecord
     foreign_key: :user_id
   )
 
-  has_many :visits
+  has_many :visits, dependent: :destroy
 
   has_many :visitors,
     -> { distinct },
@@ -49,6 +49,23 @@ class ShortenedUrl < ApplicationRecord
       .where('created_at > ?', 40.minutes.ago )
       .distinct
       .count
+  end
+
+  def self.prune(n)
+    ShortenedUrl
+      .joins(:submitter)
+      .joins('LEFT JOIN visits ON visits.shortened_url_id = shortened_urls.id')
+      .where("(shortened_urls.id IN (
+        SELECT shortened_urls.id
+        FROM shortened_urls
+        JOIN visits
+        ON visits.shortened_url_id = shortened_urls.id
+        GROUP BY shortened_urls.id
+        HAVING MAX(visits.created_at) < \'#{n.minute.ago}\'
+      ) OR (
+        visits.id IS NULL and shortened_urls.created_at < \'#{n.minutes.ago}\'
+      )) AND users.premium = \'f\'")
+      .destroy_all
   end
 
   private
